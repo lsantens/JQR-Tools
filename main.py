@@ -1,10 +1,10 @@
 import sys
 import json
 import subprocess
-import os
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QStackedWidget, QHBoxLayout, QTextEdit
 )
+
 
 class ConfigCollector:
     def __init__(self):
@@ -25,13 +25,11 @@ class ConfigCollector:
         except FileNotFoundError:
             pass
 
-collector = ConfigCollector()
 
 class NetworkConfigPage(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout()
-
         self.fields = {}
         for label in ["SSID", "Password", "Gateway"]:
             row = QHBoxLayout()
@@ -60,22 +58,18 @@ class NetworkConfigPage(QWidget):
 
         button_layout = QVBoxLayout()
         self.load_btn = QPushButton("Load Config")
+        self.load_btn.clicked.connect(self.load_config)  # fixed here
         self.save_btn = QPushButton("Save Network Config")
-        self.push_btn = QPushButton("Push Config")
-        self.load_btn.clicked.connect(self.load_config)
         self.save_btn.clicked.connect(self.save_config)
-        self.push_btn.clicked.connect(self.push_config)
 
         button_column = QVBoxLayout()
         button_column.addWidget(self.load_btn)
         button_column.addWidget(self.save_btn)
-        button_column.addWidget(self.push_btn)
 
         button_row = QHBoxLayout()
         button_row.addStretch()
         button_row.addLayout(button_column)
         layout.addLayout(button_row)
-
         self.setLayout(layout)
 
     def adjust_mask(self, delta):
@@ -92,6 +86,12 @@ class NetworkConfigPage(QWidget):
         collector.data["network"] = {key: field.text() for key, field in self.fields.items()}
         collector.save_to_file()
 
+    def load_config(self):
+        collector.load_from_file()
+        network = collector.data.get("network", {})
+        for key, field in self.fields.items():
+            field.setText(network.get(key, ""))
+
     def update_ip_prefix(self):
         gateway = self.fields["Gateway"].text()
         parts = gateway.strip().split(".")
@@ -106,8 +106,6 @@ class NetworkConfigPage(QWidget):
 
     def push_config(self):
         import paramiko
-        import os
-
         collector.save_to_file()
         collector.load_from_file()
 
@@ -138,138 +136,44 @@ class NetworkConfigPage(QWidget):
         except Exception as e:
             print(f"SSH push error: {e}")
 
-    def load_config(self):
+    def load_credentials(self):
         collector.load_from_file()
-        for key, field in self.fields.items():
-            field.setText(collector.data.get("network", {}).get(key, ""))
+        self.username_input.setText(collector.data.get("ssh", {}).get("username", ""))
+        self.password_input.setText(collector.data.get("ssh", {}).get("password", ""))
 
-class RobotInfoPage(QWidget):
-    def __init__(self):
-        super().__init__()
-        layout = QVBoxLayout()
-
-        self.ip_label = QLabel("Robot IP")
-        self.ip_input = QLineEdit()
-        self.robot_id_label = QLabel("Robot Number")
-        robot_row = QHBoxLayout()
-        self.robot_id_input = QLineEdit()
-        self.increment_btn = QPushButton("+")
-        self.decrement_btn = QPushButton("-")
-        robot_row.addWidget(self.robot_id_input)
-        robot_row.addWidget(self.increment_btn)
-        robot_row.addWidget(self.decrement_btn)
-
-        self.sync_toggle = QPushButton("IP Mirroring: ON")
-        self.sync_toggle.setCheckable(True)
-        self.sync_toggle.setChecked(True)
-        self.sync_toggle.clicked.connect(self.toggle_sync)
-
-        layout.addWidget(self.ip_label)
-        layout.addWidget(self.ip_input)
-        layout.addWidget(self.sync_toggle)
-        layout.addWidget(self.robot_id_label)
-        layout.addLayout(robot_row)
-
-        self.load_btn = QPushButton("Load Robot Config")
-        self.save_btn = QPushButton("Save Robot Info")
-        self.load_btn.clicked.connect(self.load_info)
-        self.save_btn.clicked.connect(self.save_info)
-        layout.addWidget(self.load_btn)
-        layout.addWidget(self.load_btn)
-        layout.addWidget(self.save_btn)
-
-        self.increment_btn.clicked.connect(self.increment_robot_number)
-        self.decrement_btn.clicked.connect(self.decrement_robot_number)
-
-        self.setLayout(layout)
-
-    def increment_robot_number(self):
-        try:
-            num = int(self.robot_id_input.text())
-            self.robot_id_input.setText(str(num + 1))
-            if self.sync_toggle.isChecked():
-                self.update_ip(1)
-        except ValueError:
-            pass
-        except ValueError:
-            pass
-
-    def decrement_robot_number(self):
-        try:
-            num = int(self.robot_id_input.text())
-            self.robot_id_input.setText(str(num - 1))
-            if self.sync_toggle.isChecked():
-                self.update_ip(-1)
-        except ValueError:
-            pass
-        except ValueError:
-            pass
-
-    def update_ip(self, delta):
-        ip = self.ip_input.text().strip()
-        parts = ip.split(".")
-        if len(parts) == 4:
-            try:
-                parts[-1] = str(max(0, int(parts[-1]) + delta))
-                self.ip_input.setText(".".join(parts))
-            except ValueError:
-                pass
-
-    def sync_robot_number(self):
-        if not self.sync_toggle.isChecked():
-            return
-        ip = self.ip_input.text()
-        parts = ip.split(".")
-        if len(parts) == 4:
-            try:
-                self.robot_id_input.setText(str(int(parts[-1])))
-            except ValueError:
-                pass
-
-        # always allow user to enter a number
-        self.robot_id_input.setReadOnly(False)
-
-    def toggle_sync(self):
-        if self.sync_toggle.isChecked():
-            self.sync_toggle.setText("IP Mirroring: ON")
-            self.sync_robot_number()
-        else:
-            self.sync_toggle.setText("IP Mirroring: OFF")
-        if self.sync_toggle.isChecked():
-            self.sync_toggle.setText("IP Mirroring: ON")
-        else:
-            self.sync_toggle.setText("IP Mirroring: OFF")
-
-    def load_info(self):
-        collector.load_from_file()
-        self.robot_id_input.setText(collector.data.get("robot", {}).get("robot_number", ""))
-        self.ip_input.setText(collector.data.get("robot", {}).get("ip", ""))
-
-    def save_info(self):
-        collector.data["robot"] = {
-            "robot_number": self.robot_id_input.text(),
-            "ip": self.ip_input.text()
+    def save_credentials(self):
+        collector.data["ssh"] = {
+            "username": self.username_input.text(),
+            "password": self.password_input.text()
         }
         collector.save_to_file()
+
+
 
 class SystemPage(QWidget):
     def __init__(self):
         super().__init__()
         layout = QVBoxLayout()
 
-        # SSH output display for status/logs
         self.status_display = QTextEdit()
         self.status_display.setReadOnly(True)
 
         self.connect_btn = QPushButton("Connect via SSH")
         self.connect_btn.clicked.connect(self.connect_ssh)
-
-        layout.addWidget(self.status_display)
-        layout.addWidget(self.connect_btn)
+        self.disconnect_btn = QPushButton("Disconnect SSH")
+        self.disconnect_btn.clicked.connect(lambda: self.status_display.append("Disconnected from SSH."))
 
         self.reboot_btn = QPushButton("Reboot Robot")
         self.reboot_btn.clicked.connect(self.confirm_reboot)
+
+        self.push_btn = QPushButton("Push Config")
+        self.push_btn.clicked.connect(self.push_config)
+
+        layout.addWidget(self.status_display)
+        layout.addWidget(self.connect_btn)
+        layout.addWidget(self.disconnect_btn)
         layout.addWidget(self.reboot_btn)
+        layout.addWidget(self.push_btn)
 
         self.setLayout(layout)
 
@@ -284,12 +188,9 @@ class SystemPage(QWidget):
 
     def reboot(self):
         try:
-            result = subprocess.run(
-                ["/bin/bash", "/kubot/home/app/app.sh", "restart"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
+            result = subprocess.run([
+                "/bin/bash", "/kubot/home/app/app.sh", "restart"
+            ], capture_output=True, text=True, timeout=10)
             if result.returncode == 0:
                 self.status_display.append("Robot rebooted via app.sh restart command.")
             else:
@@ -320,43 +221,94 @@ class SystemPage(QWidget):
         except Exception as e:
             self.status_display.append(f"Error: {str(e)}")
 
-    def reboot(self):
+    def push_config(self):
+        page = self.parent().parent().pages.get("Network Config")
+        if page:
+            page.push_config()
+
+
+class RobotInfoPage(QWidget):
+    def __init__(self):
+        super().__init__()
+        layout = QVBoxLayout()
+
+        self.ip_label = QLabel("Robot IP")
+        self.ip_input = QLineEdit()
+        self.robot_id_label = QLabel("Robot Number")
+        self.robot_id_input = QLineEdit()
+
+        layout.addWidget(self.ip_label)
+        layout.addWidget(self.ip_input)
+        layout.addWidget(self.robot_id_label)
+        layout.addWidget(self.robot_id_input)
+
+        # Mirror toggle
+        self.mirror_btn = QPushButton("Mirror On")
+        self.mirror_on = False
+        self.mirror_btn.setCheckable(True)
+        self.mirror_btn.toggled.connect(self.toggle_mirror)
+
+        # Increment and Decrement buttons
+        inc_dec_layout = QHBoxLayout()
+        self.inc_btn = QPushButton("+")
+        self.dec_btn = QPushButton("-")
+        self.inc_btn.clicked.connect(lambda: self.adjust_value(1))
+        self.dec_btn.clicked.connect(lambda: self.adjust_value(-1))
+        inc_dec_layout.addWidget(self.dec_btn)
+        inc_dec_layout.addWidget(self.inc_btn)
+
+        layout.addWidget(self.mirror_btn)
+        layout.addLayout(inc_dec_layout)
+
+        # Save/Load buttons
+        self.save_btn = QPushButton("Save Robot Info")
+        self.save_btn.clicked.connect(self.save_info)
+        self.load_btn = QPushButton("Load Robot Info")
+        self.load_btn.clicked.connect(self.load_info)
+
+        layout.addWidget(self.load_btn)
+        layout.addWidget(self.save_btn)
+        self.setLayout(layout)
+
+    def toggle_mirror(self, checked):
+        self.mirror_on = checked
+        self.mirror_btn.setText("Mirror On" if checked else "Mirror Off")
+        if checked:
+            ip_parts = self.ip_input.text().strip().split(".")
+            if len(ip_parts) == 4 and ip_parts[-1].isdigit():
+                self.robot_id_input.setText(ip_parts[-1])
+
+    def adjust_value(self, delta):
+        # Adjust robot number
         try:
-            result = subprocess.run(
-                ["/bin/bash", "/kubot/home/app/app.sh", "restart"],
-                capture_output=True,
-                text=True,
-                timeout=10
-            )
-            if result.returncode == 0:
-                self.status_display.append("Robot rebooted via app.sh restart command.")
-            else:
-                self.status_display.append("Failed to reboot robot:" + result.stderr)
-        except Exception as e:
-            self.status_display.append(f"Error during reboot: {str(e)}")
-
-    def connect_ssh(self):
-        collector.load_from_file()
-        ip = collector.data.get("robot", {}).get("ip", "")
-        user = collector.data.get("ssh", {}).get("username", "")
-
-        if not ip or not user:
-            self.status_display.append("Missing IP or SSH Username in config.")
+            robot_num = int(self.robot_id_input.text()) + delta
+            self.robot_id_input.setText(str(robot_num))
+        except ValueError:
             return
 
-        self.status_display.append(f"Attempting SSH to {user}@{ip}...")
+        # Adjust IP if mirroring
+        if self.mirror_on:
+            ip_parts = self.ip_input.text().strip().split(".")
+            if len(ip_parts) == 4 and ip_parts[-1].isdigit():
+                try:
+                    new_ip_last = int(ip_parts[-1]) + delta
+                    new_ip_last = max(0, min(255, new_ip_last))
+                    ip_parts[-1] = str(new_ip_last)
+                    self.ip_input.setText(".".join(ip_parts))
+                except ValueError:
+                    pass
 
-        try:
-            result = subprocess.run([
-                "ssh", f"{user}@{ip}", "echo Connected Successfully"
-            ], capture_output=True, timeout=5, text=True)
+    def save_info(self):
+        collector.data["robot"] = {
+            "robot_number": self.robot_id_input.text(),
+            "ip": self.ip_input.text()
+        }
+        collector.save_to_file()
 
-            if result.returncode == 0:
-                self.status_display.append("SSH Success:\n" + result.stdout)
-            else:
-                self.status_display.append("SSH Failed:\n" + result.stderr)
-        except Exception as e:
-            self.status_display.append(f"Error: {str(e)}")
+    def load_info(self):
+        collector.load_from_file()
+        self.robot_id_input.setText(collector.data.get("robot", {}).get("robot_number", ""))
+        self.ip_input.setText(collector.data.get("robot", {}).get("ip", ""))
 
 class SSHConfigPage(QWidget):
     def __init__(self):
@@ -378,6 +330,7 @@ class SSHConfigPage(QWidget):
         self.save_btn = QPushButton("Save SSH Credentials")
         self.load_btn.clicked.connect(self.load_credentials)
         self.save_btn.clicked.connect(self.save_credentials)
+        layout.addWidget(self.load_btn)
         layout.addWidget(self.save_btn)
 
         self.setLayout(layout)
@@ -393,6 +346,7 @@ class SSHConfigPage(QWidget):
             "password": self.password_input.text()
         }
         collector.save_to_file()
+
 
 class MainWindow(QWidget):
     def __init__(self):
@@ -425,8 +379,12 @@ class MainWindow(QWidget):
         index = list(self.pages.keys()).index(name)
         self.stack.setCurrentIndex(index)
 
+
 if __name__ == '__main__':
+    import os
+
     app = QApplication(sys.argv)
+    collector = ConfigCollector()
     main_win = MainWindow()
     main_win.resize(500, 400)
     main_win.show()
