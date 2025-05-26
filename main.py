@@ -7,6 +7,7 @@ from PyQt5.QtWidgets import (
     QStackedWidget, QHBoxLayout, QMessageBox, QTextEdit, QScrollArea, QSizePolicy
 )
 from PyQt5.QtCore import Qt
+import subprocess
 # ---------------------- Scrollable Config ---------------------
 class ScrollablePage(QWidget):
     def __init__(self, inner_widget):
@@ -66,6 +67,7 @@ class NetworkConfigPage(QWidget):
             row.addWidget(input_box)
             layout.addLayout(row)
 
+        self.fields["Gateway"].textChanged.connect(self.update_ip_prefix)
         # Subnet Mask
         mask_row = QHBoxLayout()
         lbl = QLabel("Subnet Mask")
@@ -141,7 +143,11 @@ class NetworkConfigPage(QWidget):
                 # unwrap: ScrollablePage → layout → scroll → widget (RobotInfoPage)
                 robot_widget = robot_page.layout().itemAt(0).widget().widget()
                 current_ip = robot_widget.ip_input.text()
-                last = current_ip.split(".")[-1] if current_ip else "100"
+                if current_ip and len(current_ip.split(".")) == 4:
+                    last = current_ip.split(".")[-1]
+                else:
+                    last = "100"
+
                 robot_widget.ip_input.setText(prefix + last)
 
     def push_config(self):
@@ -150,7 +156,7 @@ class NetworkConfigPage(QWidget):
         rob = collector.data.get("robot", {})
         ssh = collector.data.get("ssh", {})
 
-        ip = rob.get("ip", "")
+        ip = ssh.get("ip", "")
         username = ssh.get("username", "")
         password = ssh.get("password", "")
 
@@ -183,14 +189,15 @@ class NetworkConfigPage(QWidget):
 class RobotInfoPage(QWidget):
     def __init__(self):
         super().__init__()
+        self.setStyleSheet("QWidget { font-size: 10pt; }")
         layout = QVBoxLayout()
 
         # Row for IP and Robot Number
         ip_row = QHBoxLayout()
         self.ip_input = QLineEdit()
-        self.ip_input.setPlaceholderText("Robot IP")
+        self.ip_input.setPlaceholderText("e.g. 10.1.220.45")
         self.robot_id_input = QLineEdit()
-        self.robot_id_input.setPlaceholderText("Robot Number")
+        self.robot_id_input.setPlaceholderText("Robot Number on Sticker")
         ip_row.addWidget(QLabel("IP:"))
         ip_row.addWidget(self.ip_input)
         ip_row.addWidget(QLabel("ID:"))
@@ -200,7 +207,7 @@ class RobotInfoPage(QWidget):
         # ESS IP row
         ess_row = QHBoxLayout()
         self.ess_input = QLineEdit()
-        self.ess_input.setPlaceholderText("ESS Server IP")
+        self.ess_input.setPlaceholderText("ESS Server VIP")
         ess_row.addWidget(QLabel("ESS IP:"))
         ess_row.addWidget(self.ess_input)
         layout.addLayout(ess_row)
@@ -227,8 +234,8 @@ class RobotInfoPage(QWidget):
         layout.addLayout(control_row)
 
         # Save and Load buttons
-        save = QPushButton("Save Robot Info")
-        load = QPushButton("Load Robot Info")
+        save = QPushButton("Save")
+        load = QPushButton("Load")
         save.clicked.connect(self.save_info)
         load.clicked.connect(self.load_info)
         layout.addWidget(load)
@@ -277,6 +284,7 @@ class RobotInfoPage(QWidget):
 class SystemPage(QWidget):
     def __init__(self):
         super().__init__()
+        self.setStyleSheet("QWidget { font-size: 10pt; }")
         layout = QVBoxLayout()
 
         self.status_display = QTextEdit()
@@ -300,7 +308,7 @@ class SystemPage(QWidget):
 
     def connect_ssh(self):
         collector.load_from_file()
-        ip = collector.data.get("robot", {}).get("ip", "")
+        ip = collector.data.get("ssh", {}).get("ip", "")
         user = collector.data.get("ssh", {}).get("username", "")
         if not ip or not user:
             self.status_display.append("Missing IP or SSH Username.")
@@ -325,31 +333,47 @@ class SystemPage(QWidget):
 
 
 # ---------------------- SSH Config Page ----------------------
+from PyQt5.QtWidgets import QFrame
+
 class SSHConfigPage(QWidget):
     def __init__(self):
         super().__init__()
+        self.setStyleSheet("QWidget { font-size: 10pt; }")
+        self.setFocusPolicy(Qt.NoFocus)
+
         layout = QVBoxLayout()
+        layout.setContentsMargins(5, 5, 5, 5)
+        layout.setSpacing(8)
+
+        self.ip_input = QLineEdit()
+        self.ip_input.setPlaceholderText("e.g. 192.168.0.101")
 
         self.username_input = QLineEdit("kubot")
         self.password_input = QLineEdit("HairouKubot_@2018!")
         self.password_input.setEchoMode(QLineEdit.Normal)
 
-        layout.addWidget(QLabel("SSH Username"))
+        layout.addWidget(QLabel("IP Address"))
+        layout.addWidget(self.ip_input)
+        layout.addWidget(QLabel("Username"))
         layout.addWidget(self.username_input)
-        layout.addWidget(QLabel("SSH Password"))
+        layout.addWidget(QLabel("Password"))
         layout.addWidget(self.password_input)
 
-        save = QPushButton("Save")
+        # Buttons in one row
+        button_row = QHBoxLayout()
         load = QPushButton("Load")
-        save.clicked.connect(self.save_credentials)
+        save = QPushButton("Save")
         load.clicked.connect(self.load_credentials)
+        save.clicked.connect(self.save_credentials)
+        button_row.addWidget(load)
+        button_row.addWidget(save)
 
-        layout.addWidget(load)
-        layout.addWidget(save)
+        layout.addLayout(button_row)
         self.setLayout(layout)
 
     def save_credentials(self):
         collector.data["ssh"] = {
+            "ip": self.ip_input.text(),
             "username": self.username_input.text(),
             "password": self.password_input.text()
         }
@@ -358,8 +382,11 @@ class SSHConfigPage(QWidget):
     def load_credentials(self):
         collector.load_from_file()
         ssh = collector.data.get("ssh", {})
+        self.ip_input.setText(ssh.get("ip", ""))
         self.username_input.setText(ssh.get("username", ""))
         self.password_input.setText(ssh.get("password", ""))
+
+
 
 # ---------------------- Main App ----------------------
 class MainWindow(QWidget):
@@ -376,6 +403,7 @@ class MainWindow(QWidget):
         self.pages["Network Config"] = ScrollablePage(NetworkConfigPage(pages_ref=self.pages))
         self.pages["Robot Info"] = ScrollablePage(RobotInfoPage())
         self.pages["SSH Config"] = ScrollablePage(SSHConfigPage())
+        # self.pages["SSH Config"] = SSHConfigPage()
 
         for page in self.pages.values():
             self.stack.addWidget(page)
@@ -403,7 +431,7 @@ class MainWindow(QWidget):
 # ---------------------- Run ----------------------
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    collector = ConfigCollector()
     window = MainWindow()
     window.show()
     sys.exit(app.exec_())
+
