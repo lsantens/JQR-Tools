@@ -3,11 +3,12 @@
         "SSID": "hairou",
         "Password": "hairou",
         "Gateway": "10.1.220.1",
+        "ESS IP": "10.1.26.25",
         "Subnet Mask": "255.255.255.0"
     },
     "robot": {
-        "robot_number": "23",
-        "ip": "10.1.220.23"
+        "robot_number": "18",
+        "ip": "10.1.220.12"
     },
     "ssh": {
         "username": "hairou",
